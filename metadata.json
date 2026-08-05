@@ -1,0 +1,22 @@
+{
+  "model": "qwen/qwen3-8b",
+  "model_display_name": "qwen/qwen3-8b (OpenRouter)",
+  "parameter_size": "8B parameters (<= 10B)",
+  "framework": "Custom Python Multi-Agent Framework",
+  "runtime": {
+    "python_version": "3.14.5 (main, May 10 2026, 10:21:34) [Clang 17.0.0 (clang-1700.6.4.2)]",
+    "total_duration_seconds": 1439.67,
+    "cases_processed": 50,
+    "success_count": 50,
+    "error_count": 0
+  },
+  "agents": [
+    "CoordinatorAgent",
+    "CustomerAgent",
+    "OrderProductAgent",
+    "PaymentAgent",
+    "DeliveryAgent",
+    "PolicyAgent",
+    "VerifierAgent"
+  ]
+}
