@@ -180,6 +180,17 @@ def check_case(filepath: str, ds: DataStore) -> Tuple[List[str], int]:
         if order_id not in affected_orders:
             errors.append("claimed order missing in affected_entities.order_ids")
 
+        # quy tắc primary theo order_status (bắt lỗi order_status bị mất)
+        order = ds.get_order(order_id)
+        if order is not None:
+            status = str(order.get("order_status", ""))
+            pay_total = pay.get("payment_total_brl") or 0
+            primary = assessment.get("primary_issue")
+            if status == "canceled" and pay_total > 0 and primary != "canceled_order_paid":
+                errors.append(f"status canceled + paid -> must be canceled_order_paid, got {primary}")
+            if status == "unavailable" and pay_total > 0 and primary != "unavailable_order_paid":
+                errors.append(f"status unavailable + paid -> must be unavailable_order_paid, got {primary}")
+
     # 6. rounding
     pay = out.get("payment_reconciliation", {})
     for k in MONEY_KEYS:

@@ -44,6 +44,7 @@ class OrderProductAgent(BaseAgent):
             if items.empty:
                 res = self._empty_result()
                 res["order_id"] = order_id
+                res["order_status"] = order.get("order_status")
                 return AgentResult(self.name, res, llm_used=llm_used, llm_notes=llm_notes)
 
             item_ids = [f"{order_id}:{int(row['order_item_id'])}" for _, row in items.iterrows()]
