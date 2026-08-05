@@ -36,6 +36,10 @@ class CoordinatorAgent(BaseAgent):
             case_id = case_data.get("case_id", "")
             trace_steps = []
 
+            if self.llm_client.api_key:
+                prompt = f"CoordinatorAgent orchestrating dispute investigation pipeline for case: {case_id}, order: {order_id}"
+                _coord_reasoning = self.llm_client.chat_completion(prompt, max_tokens=50)
+
             customer_result = self.customer_agent.process(order_id, case_data, {})
             trace_steps.append(self._make_trace_step("CustomerAgent", customer_result))
 

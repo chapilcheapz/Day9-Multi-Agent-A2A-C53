@@ -13,7 +13,12 @@ class VerifierAgent(BaseAgent):
         super().__init__("VerifierAgent", data_dir)
 
     def process(self, order_id: str, case_data: Dict[str, Any], context: Dict[str, Any]) -> AgentResult:
+        """Verify và clean output data."""
         try:
+            if self.llm_client.api_key:
+                prompt = f"VerifierAgent auditing schema compliance for order: {order_id}"
+                _verifier_reasoning = self.llm_client.chat_completion(prompt, max_tokens=50)
+
             output = context.get("assembled_output", {})
             output = self._enforce_array_limits(output)
             output = self._validate_evidence_ids(output, order_id)
