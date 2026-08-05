@@ -40,6 +40,10 @@ def run_pipeline(input_dir: str = "input", output_dir: str = "output", data_dir:
 
     print("\n[3/4] Processing cases via Multi-Agent pipeline...")
     coordinator = CoordinatorAgent(data_dir)
+    if coordinator.policy_agent.llm_client.api_key:
+        print(f"  ✓ OpenRouter LLM Active: {coordinator.policy_agent.llm_client.model}")
+    else:
+        print("  ⚠ No LLM API Key found - running fallback mode.")
 
     trace_entries = []
     success_count = 0
