@@ -92,7 +92,7 @@ def run_pipeline(input_dir: str = "input", output_dir: str = "output", data_dir:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     print(f"  ✓ trace.jsonl generated ({len(trace_entries)} entries)")
 
-    model_name = os.getenv("LLM_MODEL", "nvidia/nemotron-nano-9b-v2:free")
+    model_name = "nvidia/nemotron-nano-9b-v2:free"
     metadata = {
         "model": model_name,
         "model_display_name": f"{model_name} (OpenRouter)",

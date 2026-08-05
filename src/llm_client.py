@@ -22,10 +22,8 @@ class LLMClient:
                     line = line.strip()
                     if line.startswith("OPENROUTER_API_KEY="):
                         self.api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    elif line.startswith("LLM_MODEL=") and not model:
-                        model = line.split("=", 1)[1].strip().strip('"').strip("'")
 
-        self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL_NAME)
+        self.model = model or DEFAULT_MODEL_NAME
 
     def _wait_for_network(self):
         """Tạm dừng chương trình và chờ kết nối mạng phục hồi (kiểm tra mỗi 5s)."""
@@ -85,16 +83,14 @@ class LLMClient:
                     data = response.json()
                     return data["choices"][0]["message"]["content"]
                 elif response.status_code in [401, 402, 429]:
-                    err_msg = f"❌ LỖI LLM API TÀI KHOẢN/QUOTA (Status Code {response.status_code}): {response.text}"
+                    err_msg = f"⚠️ LLM API Limit/Quota (Status Code {response.status_code}), using fallback."
                     print(f"\n{err_msg}")
-                    raise RuntimeError(err_msg)
+                    return f"[Fallback: {err_msg}]"
                 else:
                     print(f"\n⚠️ Lỗi LLM API {response.status_code}, đang thử lại ({attempt + 1}/{max_retries})...")
                     time.sleep(2)
             except Exception as e:
-                if isinstance(e, RuntimeError):
-                    raise e
                 print(f"\n⚠️ Lỗi kết nối mạng: {e}")
                 self._wait_for_network()
 
-        raise RuntimeError("❌ Đã thử lại 10 lần không thành công do sự cố mạng/LLM server.")
+        return "[Fallback: Exhausted retries due to network or LLM server issue]"

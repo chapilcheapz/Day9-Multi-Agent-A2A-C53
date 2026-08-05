@@ -109,7 +109,7 @@ class CoordinatorAgent(BaseAgent):
                 "confidence": policy_data.get("confidence", 0.5),
             },
             "affected_entities": {
-                "order_ids": [order_id] if order_data.get("order_id") else [],
+                "order_ids": [order_id],
                 "item_ids": order_data.get("item_ids", []),
                 "seller_ids": order_data.get("seller_ids", []),
                 "payment_ids": payment_data.get("payment_ids", []),
