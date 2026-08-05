@@ -1,0 +1,22 @@
+{
+  "model": "qwen/qwen-2.5-7b-instruct",
+  "model_display_name": "qwen/qwen-2.5-7b-instruct (OpenRouter)",
+  "parameter_size": "9B parameters (<= 10B)",
+  "framework": "Custom Python Multi-Agent Framework",
+  "runtime": {
+    "python_version": "3.13.5 (main, Jun 11 2025, 15:36:57) [Clang 17.0.0 (clang-1700.0.13.3)]",
+    "total_duration_seconds": 850.33,
+    "cases_processed": 50,
+    "success_count": 44,
+    "error_count": 6
+  },
+  "agents": [
+    "CoordinatorAgent",
+    "CustomerAgent",
+    "OrderProductAgent",
+    "PaymentAgent",
+    "DeliveryAgent",
+    "PolicyAgent",
+    "VerifierAgent"
+  ]
+}
