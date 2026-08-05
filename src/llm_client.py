@@ -16,6 +16,15 @@ class LLMClient:
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY", "")
+        if not self.api_key and os.path.exists(".env"):
+            with open(".env", "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("OPENROUTER_API_KEY="):
+                        self.api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith("LLM_MODEL=") and not model:
+                        model = line.split("=", 1)[1].strip().strip('"').strip("'")
+
         self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL_NAME)
 
     def chat_completion(
@@ -35,6 +44,8 @@ class LLMClient:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/chapilcheapz/K4-Day9-Multi-Agent-A2A",
+            "X-Title": "K4 Multi-Agent System",
         }
 
         payload = {
@@ -56,6 +67,12 @@ class LLMClient:
                 data = response.json()
                 return data["choices"][0]["message"]["content"]
             else:
-                return f"[API Error {response.status_code}: {response.text[:100]}]"
+                err_msg = f"❌ LỖI LLM API (Status Code {response.status_code}): {response.text}"
+                print(f"\n{err_msg}")
+                raise RuntimeError(err_msg)
         except Exception as e:
-            return f"[LLM Exception: {str(e)}]"
+            if isinstance(e, RuntimeError):
+                raise e
+            err_msg = f"❌ LỖI KẾT NỐI MẠNG ĐẾN LLM API: {str(e)}"
+            print(f"\n{err_msg}")
+            raise RuntimeError(err_msg)
