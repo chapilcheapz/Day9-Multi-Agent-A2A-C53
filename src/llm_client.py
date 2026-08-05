@@ -27,6 +27,21 @@ class LLMClient:
 
         self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL_NAME)
 
+    def _wait_for_network(self):
+        """Tạm dừng chương trình và chờ kết nối mạng phục hồi (kiểm tra mỗi 5s)."""
+        import time
+        print("\n⚠️ LLM API: Mất kết nối mạng hoặc Timeout! Đang tạm dừng chờ kết nối lại (kiểm tra mỗi 5s)...")
+        while True:
+            try:
+                res = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
+                if res.status_code == 200:
+                    print("  ✓ Đã có kết nối mạng trở lại! Đang tiếp tục xử lý...")
+                    time.sleep(1)
+                    break
+            except Exception:
+                pass
+            time.sleep(5)
+
     def chat_completion(
         self,
         prompt: str,
@@ -36,7 +51,7 @@ class LLMClient:
     ) -> str:
         """
         Gửi câu lệnh tới OpenRouter LLM và trả về chuỗi phản hồi text.
-        Nếu không có API key hoặc gặp lỗi mạng, sẽ fallback an toàn.
+        Nếu gặp lỗi mạng/timeout, sẽ tạm dừng chờ có mạng trở lại và thử lại.
         """
         if not self.api_key:
             return f"[Fallback: No OPENROUTER_API_KEY found. Prompt was: {prompt[:50]}...]"
@@ -59,20 +74,27 @@ class LLMClient:
             "stream": False,
         }
 
-        try:
-            response = requests.post(
-                OPENROUTER_URL, headers=headers, json=payload, timeout=15
-            )
-            if response.status_code == 200:
-                data = response.json()
-                return data["choices"][0]["message"]["content"]
-            else:
-                err_msg = f"❌ LỖI LLM API (Status Code {response.status_code}): {response.text}"
-                print(f"\n{err_msg}")
-                raise RuntimeError(err_msg)
-        except Exception as e:
-            if isinstance(e, RuntimeError):
-                raise e
-            err_msg = f"❌ LỖI KẾT NỐI MẠNG ĐẾN LLM API: {str(e)}"
-            print(f"\n{err_msg}")
-            raise RuntimeError(err_msg)
+        import time
+        max_retries = 10
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    OPENROUTER_URL, headers=headers, json=payload, timeout=30
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    return data["choices"][0]["message"]["content"]
+                elif response.status_code in [401, 402, 429]:
+                    err_msg = f"❌ LỖI LLM API TÀI KHOẢN/QUOTA (Status Code {response.status_code}): {response.text}"
+                    print(f"\n{err_msg}")
+                    raise RuntimeError(err_msg)
+                else:
+                    print(f"\n⚠️ Lỗi LLM API {response.status_code}, đang thử lại ({attempt + 1}/{max_retries})...")
+                    time.sleep(2)
+            except Exception as e:
+                if isinstance(e, RuntimeError):
+                    raise e
+                print(f"\n⚠️ Lỗi kết nối mạng: {e}")
+                self._wait_for_network()
+
+        raise RuntimeError("❌ Đã thử lại 10 lần không thành công do sự cố mạng/LLM server.")
