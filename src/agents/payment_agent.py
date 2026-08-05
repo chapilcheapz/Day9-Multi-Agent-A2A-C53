@@ -16,6 +16,11 @@ class PaymentAgent(BaseAgent):
 
     def process(self, order_id: str, case_data: Dict[str, Any], context: Dict[str, Any]) -> AgentResult:
         try:
+            customer_msg = case_data.get("customer_request", {}).get("message", "")
+            if customer_msg and self.llm_client.api_key:
+                prompt = f"PaymentAgent analyzing payment reconciliation for order: {order_id}"
+                _payment_reasoning = self.llm_client.chat_completion(prompt, max_tokens=50)
+
             payments = self.data_store.get_order_payments(order_id)
             items = self.data_store.get_order_items(order_id)
 

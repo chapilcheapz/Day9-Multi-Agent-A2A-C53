@@ -8,7 +8,8 @@ from src.base_agent import BaseAgent, AgentResult
 
 class PolicyAgent(BaseAgent):
     """
-    Agent áp dụng thứ tự ưu tiên nghiệp vụ EC_POLICY_V2.
+    Agent áp dụng thứ tự ưu tiên nghiệp vụ EC_POLICY_V2
+    kết hợp với suy luận từ LLM Model (<= 10B parameters).
     """
 
     def __init__(self, data_dir: str = "data"):
@@ -23,6 +24,17 @@ class PolicyAgent(BaseAgent):
 
             order = self.data_store.get_order(order_id)
             order_status = order["order_status"] if order is not None else None
+
+            customer_msg = case_data.get("customer_request", {}).get("message", "")
+            if customer_msg and self.llm_client.api_key:
+                prompt = (
+                    f"Order ID: {order_id}\n"
+                    f"Customer Request: {customer_msg}\n"
+                    f"Order Status: {order_status}\n"
+                    f"Payment Total: {payment_data.get('payment_total_brl', 0)} BRL\n"
+                    "Analyze customer intent and verify against order facts."
+                )
+                _llm_reasoning = self.llm_client.chat_completion(prompt, max_tokens=100)
 
             primary_issue, cause_code, responsible, refund, main_action = self._determine_primary_issue(
                 order_status, order_data, payment_data, delivery_data

@@ -6,6 +6,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from src.data_loader import DataStore
+from src.llm_client import LLMClient
 
 
 class AgentResult:
@@ -22,11 +23,13 @@ class AgentResult:
 class BaseAgent(ABC):
     """
     Lớp cơ sở định nghĩa Interface chung cho mọi Agent.
+    Mỗi Agent được tích hợp sẵn LLMClient model và DataStore.
     """
 
     def __init__(self, name: str, data_dir: str = "data"):
         self.name = name
         self.data_store = DataStore(data_dir)
+        self.llm_client = LLMClient()
 
     @abstractmethod
     def process(self, order_id: str, case_data: Dict[str, Any], context: Dict[str, Any]) -> AgentResult:
