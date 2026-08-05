@@ -157,12 +157,16 @@ def check_case(filepath: str, ds: DataStore) -> Tuple[List[str], int]:
         items = ds.get_order_items(order_id)
         pay = out.get("payment_reconciliation", {})
 
-        # null handling theo đề bài
+        # null handling theo đề bài (item_total/freight = 0.0; expected/diff/reconciled = null)
         if items.empty:
             if pay.get("expected_total_brl") is not None:
                 errors.append("expected_total_brl must be null when order has no items")
             if pay.get("difference_brl") is not None:
                 errors.append("difference_brl must be null when order has no items")
+            if pay.get("item_total_brl") != 0.0:
+                errors.append(f"item_total_brl must be 0.0 when no items, got {pay.get('item_total_brl')}")
+            if pay.get("freight_total_brl") != 0.0:
+                errors.append(f"freight_total_brl must be 0.0 when no items, got {pay.get('freight_total_brl')}")
             for eid in out.get("evidence_ids", []):
                 if eid.startswith("item:") or eid.startswith("seller:"):
                     errors.append(f"evidence {eid} invalid for order without items")

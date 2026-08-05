@@ -112,18 +112,25 @@ class CoordinatorAgent(BaseAgent):
         delivery_data: Dict,
         policy_data: Dict,
     ) -> Dict[str, Any]:
+        responsible_sellers = [
+            p["party_id"] for p in policy_data.get("responsible_parties", [])
+            if p.get("party_type") == "seller"
+        ]
+        source_sellers = order_data.get("seller_ids", [])
+        seller_ids = list(dict.fromkeys(responsible_sellers + source_sellers))[:3]
+
         return {
             "case_id": case_id,
             "case_assessment": {
                 "primary_issue": policy_data.get("primary_issue"),
                 "secondary_issues": policy_data.get("secondary_issues", []),
                 "case_status": policy_data.get("case_status"),
-                "confidence": policy_data.get("confidence", 0.5),
+                "confidence": policy_data.get("confidence", 1.0),
             },
             "affected_entities": {
                 "order_ids": [order_id],
                 "item_ids": order_data.get("item_ids", []),
-                "seller_ids": order_data.get("seller_ids", []),
+                "seller_ids": seller_ids,
                 "payment_ids": payment_data.get("payment_ids", []),
             },
             "customer_context": {
@@ -139,8 +146,8 @@ class CoordinatorAgent(BaseAgent):
                 "estimated_delivery_at": delivery_data.get("estimated_delivery_at"),
                 "carrier_handoff_at": delivery_data.get("carrier_handoff_at"),
                 "delivery_variance_hours": delivery_data.get("delivery_variance_hours"),
-                "seller_handoff_analysis": order_data.get("seller_handoff_analysis", []),
-                "late_handoff_seller_ids": order_data.get("late_handoff_seller_ids", []),
+                "seller_handoff_analysis": delivery_data.get("seller_handoff_analysis", []),
+                "late_handoff_seller_ids": delivery_data.get("late_handoff_seller_ids", []),
             },
             "payment_reconciliation": {
                 "currency": "BRL",

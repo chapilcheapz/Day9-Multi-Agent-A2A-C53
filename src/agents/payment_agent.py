@@ -2,12 +2,15 @@
 Payment Agent - Tổng hợp payment rows và đối soát với tổng item + freight.
 Truy cập: olist_order_payments, olist_order_items.
 Output: payment_reconciliation.
+
+item_total_brl/freight_total_brl/payment_total_brl luôn là số (0.0 khi không có
+dữ liệu); expected_total/difference/reconciled là null khi order không có item.
 """
 
 from typing import Any, Dict
 
-from src.base_agent import AgentResult, BaseAgent
 from src import config
+from src.base_agent import AgentResult, BaseAgent
 
 
 class PaymentAgent(BaseAgent):
@@ -21,29 +24,26 @@ class PaymentAgent(BaseAgent):
             payments = self.data_store.get_order_payments(order_id)
             items = self.data_store.get_order_items(order_id)
 
-            payment_total_brl = (
-                self._safe_round(payments["payment_value"].sum()) if not payments.empty else 0.0
-            )
+            payment_total_brl = self._safe_round(payments["payment_value"].sum()) or 0.0
             payment_ids = [
-                f"{order_id}:{int(row['payment_sequential'])}"
-                for _, row in payments.iterrows()
+                f"{order_id}:{int(row['payment_sequential'])}" for _, row in payments.iterrows()
             ]
-            payment_types = (
-                payments["payment_type"].unique().tolist() if not payments.empty else []
-            )
+            payment_types = payments["payment_type"].unique().tolist() if not payments.empty else []
+
+            item_total_brl = 0.0
+            freight_total_brl = 0.0
+            if not items.empty:
+                item_total_brl = self._safe_round(items["price"].sum()) or 0.0
+                freight_total_brl = self._safe_round(items["freight_value"].sum()) or 0.0
 
             if items.empty:
-                item_total_brl = None
-                freight_total_brl = None
                 expected_total_brl = None
                 difference_brl = None
                 reconciled = None
             else:
-                item_total_brl = self._safe_round(items["price"].sum())
-                freight_total_brl = self._safe_round(items["freight_value"].sum())
                 expected_total_brl = self._safe_round(item_total_brl + freight_total_brl)
                 difference_brl = self._safe_round(payment_total_brl - expected_total_brl)
-                reconciled = abs(difference_brl) <= config.RECONCILE_TOLERANCE_BRL
+                reconciled = difference_brl is not None and abs(difference_brl) <= config.RECONCILE_TOLERANCE_BRL
 
             return AgentResult(
                 self.name,
