@@ -1,0 +1,8 @@
+# .gitignore cho Multi-Agent E-commerce Dispute Resolution
+.env
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
