@@ -67,6 +67,12 @@ class LLMClient:
                 data = response.json()
                 return data["choices"][0]["message"]["content"]
             else:
-                return f"[API Error {response.status_code}: {response.text[:100]}]"
+                err_msg = f"❌ LỖI LLM API (Status Code {response.status_code}): {response.text}"
+                print(f"\n{err_msg}")
+                raise RuntimeError(err_msg)
         except Exception as e:
-            return f"[LLM Exception: {str(e)}]"
+            if isinstance(e, RuntimeError):
+                raise e
+            err_msg = f"❌ LỖI KẾT NỐI MẠNG ĐẾN LLM API: {str(e)}"
+            print(f"\n{err_msg}")
+            raise RuntimeError(err_msg)
