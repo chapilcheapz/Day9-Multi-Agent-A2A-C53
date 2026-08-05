@@ -82,10 +82,11 @@ def run_pipeline(input_dir: str = "input", output_dir: str = "output", data_dir:
     print(f"\n[4/4] Generating logs & metadata...")
 
     os.makedirs("logging", exist_ok=True)
-    with open("logging/trace.jsonl", "w", encoding="utf-8") as f:
-        for entry in trace_entries:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    print(f"  ✓ logging/trace.jsonl generated ({len(trace_entries)} entries)")
+    for trace_path in ["trace.jsonl", "logging/trace.jsonl"]:
+        with open(trace_path, "w", encoding="utf-8") as f:
+            for entry in trace_entries:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    print(f"  ✓ trace.jsonl generated ({len(trace_entries)} entries)")
 
     model_name = os.getenv("LLM_MODEL", "nvidia/nemotron-nano-9b-v2:free")
     metadata = {
@@ -111,9 +112,10 @@ def run_pipeline(input_dir: str = "input", output_dir: str = "output", data_dir:
         ],
     }
 
-    with open("logging/metadata.json", "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2, ensure_ascii=False)
-    print(f"  ✓ logging/metadata.json generated")
+    for meta_path in ["metadata.json", "logging/metadata.json"]:
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+    print(f"  ✓ metadata.json generated")
 
     print("\n" + "=" * 60)
     print(f"  DONE! Processed {success_count}/{len(cases)} cases successfully.")
