@@ -1,11 +1,11 @@
 {
-  "model": "nvidia/nemotron-nano-9b-v2:free",
-  "model_display_name": "nvidia/nemotron-nano-9b-v2:free (OpenRouter)",
-  "parameter_size": "9B parameters (<= 10B)",
+  "model": "qwen/qwen3-8b",
+  "model_display_name": "qwen/qwen3-8b (OpenRouter)",
+  "parameter_size": "8B parameters (<= 10B)",
   "framework": "Custom Python Multi-Agent Framework",
   "runtime": {
     "python_version": "3.14.5 (main, May 10 2026, 10:21:34) [Clang 17.0.0 (clang-1700.6.4.2)]",
-    "total_duration_seconds": 125.73,
+    "total_duration_seconds": 1540.39,
     "cases_processed": 50,
     "success_count": 50,
     "error_count": 0

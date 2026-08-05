@@ -1,31 +1,33 @@
 """
-Coordinator Agent - Điều phối toàn bộ luồng làm việc của các Agent.
+Coordinator Agent - Điều phối luồng handoff giữa các agent:
+
+1. Nhận case + claimed_order_id.
+2. Gọi Customer, Order & Product, Payment, Delivery agents (phân tích song song về mặt logic).
+3. Tổng hợp context và handoff cho Policy Agent (áp dụng EC_POLICY_V2).
+4. Đóng gói output theo đúng schema đề bài.
+5. Gửi cho Verifier Agent kiểm chứng trước khi ghi file.
+
+Trace steps ghi lại handoff giữa các agent.
 """
 
-from typing import Dict, Any
-from src.base_agent import BaseAgent, AgentResult
+from typing import Any, Dict, List
+
+from src.base_agent import AgentResult, BaseAgent
 from src.agents.customer_agent import CustomerAgent
+from src.agents.delivery_agent import DeliveryAgent
 from src.agents.order_product_agent import OrderProductAgent
 from src.agents.payment_agent import PaymentAgent
-from src.agents.delivery_agent import DeliveryAgent
 from src.agents.policy_agent import PolicyAgent
 from src.agents.verifier import VerifierAgent
 
 
 class CoordinatorAgent(BaseAgent):
-    """
-    Agent Coordinator quản lý pipeline:
-    1. Nhận order_id và thông tin case.
-    2. Gọi Customer, OrderProduct, Payment, Delivery agents.
-    3. Handoff kết quả cho Policy Agent.
-    4. Gửi kết quả cho Verifier Agent validate.
-    5. Đóng gói JSON hoàn chỉnh.
-    """
+    """Agent Coordinator điều phối toàn bộ pipeline."""
 
     def __init__(self, data_dir: str = "data"):
         super().__init__("CoordinatorAgent", data_dir)
         self.customer_agent = CustomerAgent(data_dir)
-        self.order_product_agent = OrderProductAgent(data_dir)
+        self.order_agent = OrderProductAgent(data_dir)
         self.payment_agent = PaymentAgent(data_dir)
         self.delivery_agent = DeliveryAgent(data_dir)
         self.policy_agent = PolicyAgent(data_dir)
@@ -34,61 +36,72 @@ class CoordinatorAgent(BaseAgent):
     def process(self, order_id: str, case_data: Dict[str, Any], context: Dict[str, Any]) -> AgentResult:
         try:
             case_id = case_data.get("case_id", "")
-            trace_steps = []
+            steps: List[Dict[str, Any]] = []
 
-            if self.llm_client.api_key:
-                prompt = f"CoordinatorAgent orchestrating dispute investigation pipeline for case: {case_id}, order: {order_id}"
-                _coord_reasoning = self.llm_client.chat_completion(prompt, max_tokens=50)
+            customer = self.customer_agent.process(order_id, case_data, {})
+            order = self.order_agent.process(order_id, case_data, {})
+            payment = self.payment_agent.process(order_id, case_data, {})
+            delivery = self.delivery_agent.process(order_id, case_data, {})
 
-            customer_result = self.customer_agent.process(order_id, case_data, {})
-            trace_steps.append(self._make_trace_step("CustomerAgent", customer_result))
-
-            order_result = self.order_product_agent.process(order_id, case_data, {})
-            trace_steps.append(self._make_trace_step("OrderProductAgent", order_result))
-
-            payment_result = self.payment_agent.process(order_id, case_data, {})
-            trace_steps.append(self._make_trace_step("PaymentAgent", payment_result))
-
-            delivery_result = self.delivery_agent.process(order_id, case_data, {})
-            trace_steps.append(self._make_trace_step("DeliveryAgent", delivery_result))
+            for result in (customer, order, payment, delivery):
+                steps.append(result.to_dict())
+                if not result.success:
+                    raise RuntimeError(f"{result.agent_name} failed: {result.error}")
 
             policy_context = {
-                "CustomerAgent": customer_result.data,
-                "OrderProductAgent": order_result.data,
-                "PaymentAgent": payment_result.data,
-                "DeliveryAgent": delivery_result.data,
+                "CustomerAgent": customer.data,
+                "OrderProductAgent": order.data,
+                "PaymentAgent": payment.data,
+                "DeliveryAgent": delivery.data,
             }
-
-            policy_result = self.policy_agent.process(order_id, case_data, policy_context)
-            trace_steps.append(self._make_trace_step("PolicyAgent", policy_result))
+            policy = self.policy_agent.process(order_id, case_data, policy_context)
+            steps.append(policy.to_dict())
+            if not policy.success:
+                raise RuntimeError(f"PolicyAgent failed: {policy.error}")
 
             assembled = self._assemble_output(
-                case_id, order_id,
-                customer_result.data,
-                order_result.data,
-                payment_result.data,
-                delivery_result.data,
-                policy_result.data,
+                case_id, order_id, customer.data, order.data,
+                payment.data, delivery.data, policy.data,
             )
 
-            verifier_context = {"assembled_output": assembled}
-            verifier_result = self.verifier_agent.process(order_id, case_data, verifier_context)
-            trace_steps.append(self._make_trace_step("VerifierAgent", verifier_result))
+            verifier = self.verifier_agent.process(
+                order_id, case_data, {"assembled_output": assembled}
+            )
+            steps.append(verifier.to_dict())
+            if not verifier.success:
+                raise RuntimeError(f"VerifierAgent failed: {verifier.error}")
 
-            final_output = verifier_result.data.get("verified_output", assembled)
+            final_output = verifier.data.get("verified_output", assembled)
 
             return AgentResult(
                 self.name,
                 {
                     "output": final_output,
-                    "trace_steps": trace_steps,
+                    "trace_steps": steps,
+                    "llm_claims": {
+                        agent_name: {
+                            "llm_used": result.llm_used,
+                            "llm_notes": result.llm_notes,
+                        }
+                        for agent_name, result in (
+                            ("CustomerAgent", customer),
+                            ("OrderProductAgent", order),
+                            ("PaymentAgent", payment),
+                            ("DeliveryAgent", delivery),
+                            ("PolicyAgent", policy),
+                            ("VerifierAgent", verifier),
+                        )
+                    },
                 },
                 success=True,
             )
 
+        except RuntimeError as e:
+            return AgentResult(self.name, {}, success=False, error=str(e))
         except Exception as e:
             return AgentResult(self.name, {}, success=False, error=str(e))
 
+    # ------------------------------------------------------------ assembly
     def _assemble_output(
         self,
         case_id: str,
@@ -99,19 +112,25 @@ class CoordinatorAgent(BaseAgent):
         delivery_data: Dict,
         policy_data: Dict,
     ) -> Dict[str, Any]:
-        """Tạo đối tượng JSON theo đúng cấu trúc schema đề bài yêu cầu."""
+        responsible_sellers = [
+            p["party_id"] for p in policy_data.get("responsible_parties", [])
+            if p.get("party_type") == "seller"
+        ]
+        source_sellers = order_data.get("seller_ids", [])
+        seller_ids = list(dict.fromkeys(responsible_sellers + source_sellers))[:3]
+
         return {
             "case_id": case_id,
             "case_assessment": {
                 "primary_issue": policy_data.get("primary_issue"),
                 "secondary_issues": policy_data.get("secondary_issues", []),
                 "case_status": policy_data.get("case_status"),
-                "confidence": policy_data.get("confidence", 0.5),
+                "confidence": policy_data.get("confidence", 1.0),
             },
             "affected_entities": {
                 "order_ids": [order_id],
                 "item_ids": order_data.get("item_ids", []),
-                "seller_ids": order_data.get("seller_ids", []),
+                "seller_ids": seller_ids,
                 "payment_ids": payment_data.get("payment_ids", []),
             },
             "customer_context": {
@@ -127,8 +146,8 @@ class CoordinatorAgent(BaseAgent):
                 "estimated_delivery_at": delivery_data.get("estimated_delivery_at"),
                 "carrier_handoff_at": delivery_data.get("carrier_handoff_at"),
                 "delivery_variance_hours": delivery_data.get("delivery_variance_hours"),
-                "seller_handoff_analysis": order_data.get("seller_handoff_analysis", []),
-                "late_handoff_seller_ids": order_data.get("late_handoff_seller_ids", []),
+                "seller_handoff_analysis": delivery_data.get("seller_handoff_analysis", []),
+                "late_handoff_seller_ids": delivery_data.get("late_handoff_seller_ids", []),
             },
             "payment_reconciliation": {
                 "currency": "BRL",
@@ -150,12 +169,4 @@ class CoordinatorAgent(BaseAgent):
                 "recommended_refund_brl": policy_data.get("recommended_refund_brl", 0.0),
             },
             "resolution_actions": policy_data.get("resolution_actions", []),
-        }
-
-    def _make_trace_step(self, agent_name: str, result: AgentResult) -> Dict[str, Any]:
-        return {
-            "agent": agent_name,
-            "timestamp": result.timestamp,
-            "success": result.success,
-            "error": result.error if not result.success else "",
         }

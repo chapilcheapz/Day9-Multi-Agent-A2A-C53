@@ -1,14 +1,39 @@
 """
 LLM Client - Giao tiếp với LLM qua OpenRouter API.
-Hỗ trợ model nvidia/nemotron-nano-9b-v2:free (<= 10B parameters).
+Model: nvidia/nemotron-nano-9b-v2:free (<= 10B parameters) - khai báo trong src/config.py
+Có retry khi bị rate limit/lỗi server và tạm dừng chờ khi mất kết nối mạng.
 """
 
+import json
 import os
-import requests
-from typing import Optional, Dict, Any
+import re
+import time
+from typing import Any, Dict, Optional
 
-DEFAULT_MODEL_NAME = "nvidia/nemotron-nano-9b-v2:free"
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+import requests
+
+from src import config
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a precise e-commerce dispute resolution assistant working on "
+    "the Olist Brazilian e-commerce dataset. Answer based ONLY on the data "
+    "provided. Never invent events, timestamps or amounts."
+)
+
+
+def load_env_file(env_path: str = config.ENV_FILE) -> Dict[str, str]:
+    """Đọc file .env thủ công (không cần thư viện phụ thuộc)."""
+    env: Dict[str, str] = {}
+    if not os.path.exists(env_path):
+        return env
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            env[key.strip()] = value.strip().strip('"').strip("'")
+    return env
 
 
 class LLMClient:
@@ -16,50 +41,49 @@ class LLMClient:
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key or os.getenv("OPENROUTER_API_KEY", "")
-        if not self.api_key and os.path.exists(".env"):
-            with open(".env", "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("OPENROUTER_API_KEY="):
-                        self.api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+        if not self.api_key:
+            self.api_key = load_env_file().get("OPENROUTER_API_KEY", "")
+        self.model = model or config.LLM_MODEL_NAME
+        self._requests = 0
 
-        self.model = model or DEFAULT_MODEL_NAME
+    # ------------------------------------------------------------- helpers
+    @property
+    def active(self) -> bool:
+        return bool(self.api_key)
+
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/chapilcheapz/K4-Day9-Multi-Agent-A2A",
+            "X-Title": "K4 Multi-Agent Dispute Resolution",
+        }
 
     def _wait_for_network(self):
-        """Tạm dừng chương trình và chờ kết nối mạng phục hồi (kiểm tra mỗi 5s)."""
-        import time
-        print("\n⚠️ LLM API: Mất kết nối mạng hoặc Timeout! Đang tạm dừng chờ kết nối lại (kiểm tra mỗi 5s)...")
+        print("\n  [LLM] Mất kết nối mạng - tạm dừng chờ phục hồi (kiểm tra mỗi 5s)...")
         while True:
             try:
-                res = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
+                res = requests.get(config.OPENROUTER_MODELS_URL, timeout=5)
                 if res.status_code == 200:
-                    print("  ✓ Đã có kết nối mạng trở lại! Đang tiếp tục xử lý...")
+                    print("  [LLM] Đã có kết nối trở lại, tiếp tục xử lý...")
                     time.sleep(1)
-                    break
+                    return
             except Exception:
                 pass
             time.sleep(5)
 
+    # -------------------------------------------------------------- calls
     def chat_completion(
         self,
         prompt: str,
-        system_prompt: str = "You are a helpful e-commerce dispute resolution assistant.",
+        system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         temperature: float = 0.1,
-        max_tokens: int = 500,
+        max_tokens: int = 512,
+        max_retries: int = 8,
     ) -> str:
-        """
-        Gửi câu lệnh tới OpenRouter LLM và trả về chuỗi phản hồi text.
-        Nếu gặp lỗi mạng/timeout, sẽ tạm dừng chờ có mạng trở lại và thử lại.
-        """
-        if not self.api_key:
-            return f"[Fallback: No OPENROUTER_API_KEY found. Prompt was: {prompt[:50]}...]"
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/chapilcheapz/K4-Day9-Multi-Agent-A2A",
-            "X-Title": "K4 Multi-Agent System",
-        }
+        """Gửi câu lệnh tới OpenRouter và trả về text phản hồi (hoặc fallback)."""
+        if not self.active:
+            return "[Fallback: no OPENROUTER_API_KEY]"
 
         payload = {
             "model": self.model,
@@ -72,25 +96,42 @@ class LLMClient:
             "stream": False,
         }
 
-        import time
-        max_retries = 10
-        for attempt in range(max_retries):
+        for attempt in range(1, max_retries + 1):
             try:
                 response = requests.post(
-                    OPENROUTER_URL, headers=headers, json=payload, timeout=30
+                    config.OPENROUTER_URL, headers=self._headers(), json=payload, timeout=45
                 )
                 if response.status_code == 200:
+                    self._requests += 1
                     data = response.json()
-                    return data["choices"][0]["message"]["content"]
-                elif response.status_code in [401, 402, 429]:
-                    err_msg = f"⚠️ LLM API Limit/Quota (Status Code {response.status_code}), using fallback."
-                    print(f"\n{err_msg}")
-                    return f"[Fallback: {err_msg}]"
-                else:
-                    print(f"\n⚠️ Lỗi LLM API {response.status_code}, đang thử lại ({attempt + 1}/{max_retries})...")
-                    time.sleep(2)
+                    return str(data["choices"][0]["message"]["content"])
+                if response.status_code in (401, 402):
+                    print(f"  [LLM] Lỗi {response.status_code} (key/quota) - fallback rule-based.")
+                    return "[Fallback: LLM auth/quota error]"
+                if response.status_code == 429:
+                    wait = min(2 ** attempt, 30)
+                    print(f"  [LLM] Rate limit 429 - chờ {wait}s rồi thử lại ({attempt}/{max_retries})...")
+                    time.sleep(wait)
+                    continue
+                print(
+                    f"  [LLM] Lỗi {response.status_code} - thử lại ({attempt}/{max_retries})..."
+                )
+                time.sleep(2)
             except Exception as e:
-                print(f"\n⚠️ Lỗi kết nối mạng: {e}")
+                print(f"  [LLM] Lỗi kết nối: {e}")
                 self._wait_for_network()
 
-        return "[Fallback: Exhausted retries due to network or LLM server issue]"
+        return "[Fallback: exhausted retries]"
+
+    def extract_json(self, text: str) -> Optional[Dict[str, Any]]:
+        """Trích xuất object JSON từ chuỗi phản hồi của LLM (kể cả khi bọc markdown)."""
+        if text is None or text.startswith("[Fallback"):
+            return None
+        text = text.strip()
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+        return None
