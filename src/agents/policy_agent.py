@@ -221,8 +221,6 @@ class PolicyAgent(BaseAgent):
         if primary_issue in (
             "canceled_order_paid",
             "unavailable_order_paid",
-            "late_delivery_seller",
-            "late_delivery_logistics",
         ):
             actions.append("verify_refund_completion")
 
